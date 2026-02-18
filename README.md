@@ -30,12 +30,12 @@ Access at `http://localhost:7860` or server IP.
 ## Usage
 - Open web UI
 - Upload files
-- Select model, language (dropdown), format, diarization (enter HF token)
+- Select model, language (auto-detect or dropdown), format, diarization (enter HF token)
 - Click "Transcribe"
 - Download outputs from /tmp (or mount volume: `-v /host/output:/tmp`)
 
 ## Configuration
-- Edit `app.py` for defaults (e.g., force CPU: `device = "cpu"`)
+- Edit `app.py` for defaults (e.g., force CPU by setting `device = "cpu"`)
 - Rebuild after changes
 
 ## Troubleshooting
