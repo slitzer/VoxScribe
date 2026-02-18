@@ -65,6 +65,12 @@ def transcribe_files(files, model_size, language, use_diarization, hf_token, out
     model = whisperx.load_model(model_size, device, compute_type=compute_type)
 
     results = []
+    failures = []
+
+    diarize_model = None
+    if use_diarization and hf_token:
+        diarize_model = DiarizationPipeline(use_auth_token=hf_token, device=device)
+
     for file in files:
         wav_path = None
         try:
@@ -83,8 +89,7 @@ def transcribe_files(files, model_size, language, use_diarization, hf_token, out
             )
             result = whisperx.align(result["segments"], model_a, metadata, wav_path, device)
 
-            if use_diarization and hf_token:
-                diarize_model = DiarizationPipeline(use_auth_token=hf_token, device=device)
+            if diarize_model:
                 diarize_segments = diarize_model(wav_path)
                 result = whisperx.assign_word_speakers(diarize_segments, result)
 
@@ -96,22 +101,25 @@ def transcribe_files(files, model_size, language, use_diarization, hf_token, out
                     for seg in result["segments"]:
                         spk = seg.get("speaker", "Unknown")
                         output_file.write(
-                            f"[{seg['start']:.2f}s - {seg['end']:.2f}s] {spk}: {seg['text'].strip()}\\n"
+                            f"[{seg['start']:.2f}s - {seg['end']:.2f}s] {spk}: {seg['text'].strip()}\n"
                         )
                 else:
                     for i, seg in enumerate(result["segments"], 1):
                         spk = seg.get("speaker", "Unknown")
                         s = f"{int(seg['start']//3600):02d}:{int((seg['start']%3600)//60):02d}:{int(seg['start']%60):02d},{int(seg['start']%1*1000):03d}"
                         e = f"{int(seg['end']//3600):02d}:{int((seg['end']%3600)//60):02d}:{int(seg['end']%60):02d},{int(seg['end']%1*1000):03d}"
-                        output_file.write(f"{i}\\n{s} --> {e}\\n{spk}: {seg['text'].strip()}\\n\\n")
+                        output_file.write(f"{i}\n{s} --> {e}\n{spk}: {seg['text'].strip()}\n\n")
 
             results.append(out_path)
         except Exception as error:
             failed_file = os.path.basename(file)
-            results.append(f"{failed_file}: {error}")
+            failures.append(f"{failed_file}: {error}")
         finally:
             if wav_path and os.path.exists(wav_path):
                 os.unlink(wav_path)
+
+    if failures:
+        return results, f"Done on {device.upper()} with {len(failures)} error(s): {' | '.join(failures)}"
 
     return results, f"Done on {device.upper()}"
 
