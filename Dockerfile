@@ -10,6 +10,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 
+ENV OUTPUT_DIR=/outputs
+RUN mkdir -p /outputs
+
 EXPOSE 7860
 
 CMD ["python3", "app.py"]
