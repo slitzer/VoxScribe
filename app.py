@@ -5,7 +5,6 @@ import gradio as gr
 import torch
 import whisperx
 from gradio_client import utils as gradio_client_utils
-import gradio.blocks as gradio_blocks
 from pydub import AudioSegment
 from whisperx.diarize import DiarizationPipeline
 
@@ -29,14 +28,21 @@ LANGUAGE_OPTIONS = [
 
 
 def patch_gradio_schema_parser():
-    """Handle boolean JSON Schema nodes produced by pydantic/gradio combinations."""
+    """Handle boolean JSON Schema nodes produced by pydantic/gradio combinations.
+
+    Some gradio_client versions assume every schema node is a dict, but valid JSON
+    Schema allows boolean nodes (e.g. ``additionalProperties: false``). When those
+    appear, Gradio's /info endpoint can fail with:
+    ``TypeError: argument of type 'bool' is not iterable``.
+    """
 
     original_get_type = gradio_client_utils.get_type
     original_json_schema_to_python_type = gradio_client_utils._json_schema_to_python_type
-    original_top_json_schema_to_python_type = gradio_client_utils.json_schema_to_python_type
 
     def safe_get_type(schema):
         if isinstance(schema, bool):
+            # ``True`` means unconstrained schema and ``False`` means disallowed.
+            # For API docs generation we can safely treat both as an empty schema.
             return {}
         return original_get_type(schema)
 
@@ -45,41 +51,8 @@ def patch_gradio_schema_parser():
             return "Any"
         return original_json_schema_to_python_type(schema, defs)
 
-    def safe_top_json_schema_to_python_type(schema):
-        if isinstance(schema, bool):
-            return "Any"
-        try:
-            return original_top_json_schema_to_python_type(schema)
-        except TypeError as error:
-            if "argument of type 'bool' is not iterable" not in str(error):
-                raise
-            return "Any"
-
-    # Patch gradio_client module used by Gradio route generation.
     gradio_client_utils.get_type = safe_get_type
     gradio_client_utils._json_schema_to_python_type = safe_json_schema_to_python_type
-    gradio_client_utils.json_schema_to_python_type = safe_top_json_schema_to_python_type
-
-    # Patch gradio.blocks import alias as defense-in-depth.
-    gradio_blocks.client_utils.get_type = safe_get_type
-    gradio_blocks.client_utils._json_schema_to_python_type = safe_json_schema_to_python_type
-    gradio_blocks.client_utils.json_schema_to_python_type = safe_top_json_schema_to_python_type
-
-
-def patch_blocks_api_info_guard():
-    """Fallback guard for API info generation failures in older gradio stacks."""
-
-    original_get_api_info = gradio_blocks.Blocks.get_api_info
-
-    def safe_get_api_info(self, all_endpoints: bool = False):
-        try:
-            return original_get_api_info(self, all_endpoints=all_endpoints)
-        except TypeError as error:
-            if "argument of type 'bool' is not iterable" not in str(error):
-                raise
-            return {"named_endpoints": {}, "unnamed_endpoints": {}}
-
-    gradio_blocks.Blocks.get_api_info = safe_get_api_info
 
 
 def transcribe_files(files, model_size, language, use_diarization, hf_token, output_format):
@@ -171,7 +144,6 @@ with gr.Blocks(title="WhisperX") as demo:
 
 def launch_app():
     patch_gradio_schema_parser()
-    patch_blocks_api_info_guard()
 
     share_enabled = (
         os.getenv("GRADIO_SHARE", "false").strip().lower() in {"1", "true", "yes"}
