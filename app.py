@@ -4,6 +4,7 @@ import tempfile
 import gradio as gr
 import torch
 import whisperx
+from gradio_client import utils as gradio_client_utils
 from pydub import AudioSegment
 from whisperx.diarize import DiarizationPipeline
 
@@ -24,6 +25,34 @@ LANGUAGE_OPTIONS = [
     ("Korean", "ko"),
     ("Chinese", "zh"),
 ]
+
+
+def patch_gradio_schema_parser():
+    """Handle boolean JSON Schema nodes produced by pydantic/gradio combinations.
+
+    Some gradio_client versions assume every schema node is a dict, but valid JSON
+    Schema allows boolean nodes (e.g. ``additionalProperties: false``). When those
+    appear, Gradio's /info endpoint can fail with:
+    ``TypeError: argument of type 'bool' is not iterable``.
+    """
+
+    original_get_type = gradio_client_utils.get_type
+    original_json_schema_to_python_type = gradio_client_utils._json_schema_to_python_type
+
+    def safe_get_type(schema):
+        if isinstance(schema, bool):
+            # ``True`` means unconstrained schema and ``False`` means disallowed.
+            # For API docs generation we can safely treat both as an empty schema.
+            return {}
+        return original_get_type(schema)
+
+    def safe_json_schema_to_python_type(schema, defs):
+        if isinstance(schema, bool):
+            return "Any"
+        return original_json_schema_to_python_type(schema, defs)
+
+    gradio_client_utils.get_type = safe_get_type
+    gradio_client_utils._json_schema_to_python_type = safe_json_schema_to_python_type
 
 
 def transcribe_files(files, model_size, language, use_diarization, hf_token, output_format):
@@ -112,22 +141,32 @@ with gr.Blocks(title="WhisperX") as demo:
         queue=True,
     )
 
-share_enabled = os.getenv("GRADIO_SHARE", "false").strip().lower() in {"1", "true", "yes"}
 
-launch_kwargs = {
-    "server_name": "0.0.0.0",
-    "server_port": 7860,
-    "share": share_enabled,
-    # Work around gradio_client schema parsing issues in some container builds.
-    "show_api": False,
-}
+def launch_app():
+    patch_gradio_schema_parser()
 
-try:
-    demo.queue(max_size=20).launch(**launch_kwargs)
-except ValueError as error:
-    if "localhost is not accessible" not in str(error):
-        raise
+    share_enabled = (
+        os.getenv("GRADIO_SHARE", "false").strip().lower() in {"1", "true", "yes"}
+    )
 
-    print("Localhost check failed, retrying with GRADIO_SHARE enabled.")
-    launch_kwargs["share"] = True
-    demo.queue(max_size=20).launch(**launch_kwargs)
+    launch_kwargs = {
+        "server_name": "0.0.0.0",
+        "server_port": 7860,
+        "share": share_enabled,
+        # Keep API docs hidden in production UI.
+        "show_api": False,
+    }
+
+    try:
+        demo.queue(max_size=20).launch(**launch_kwargs)
+    except ValueError as error:
+        if "localhost is not accessible" not in str(error):
+            raise
+
+        print("Localhost check failed, retrying with GRADIO_SHARE enabled.")
+        launch_kwargs["share"] = True
+        demo.queue(max_size=20).launch(**launch_kwargs)
+
+
+if __name__ == "__main__":
+    launch_app()
