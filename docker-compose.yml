@@ -6,6 +6,7 @@ services:
       - "7860:7860"
     environment:
       OUTPUT_DIR: /outputs
+      GRADIO_SHARE: "true"
     volumes:
       - ./outputs:/outputs
     restart: unless-stopped
@@ -18,6 +19,7 @@ services:
       - "7860:7860"
     environment:
       OUTPUT_DIR: /outputs
+      GRADIO_SHARE: "true"
     volumes:
       - ./outputs:/outputs
     gpus: all
