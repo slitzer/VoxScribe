@@ -75,6 +75,8 @@ docker run --rm --gpus all -p 7860:7860 -e OUTPUT_DIR=/outputs -v "$PWD/outputs:
 - Old GPU (e.g., 980 Ti): Set `compute_type = "float32"`, `batch_size=4` in `app.py`
 - Diarization error: Ensure valid HF token; update `DiarizationPipeline` args
 - GPU compose issues: Verify NVIDIA Container Toolkit and `docker run --gpus all` works on your host
+- Remote/non-localhost environments: set `GRADIO_SHARE=true` to force a shareable Gradio URL if localhost checks fail
+- Gradio schema error (`TypeError: argument of type 'bool' is not iterable`): rebuild with pinned `gradio==4.44.1` and `gradio_client==1.3.0`
 
 ## Future/Wishlist
 - Browser extension: Record live audio in chunks, send to server for real-time transcription. For groups (e.g., 6-player DnD sessions): Join session with usernames for speaker ID. Transcribe collaboratively.

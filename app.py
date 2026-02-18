@@ -112,4 +112,5 @@ with gr.Blocks(title="WhisperX") as demo:
         queue=True,
     )
 
-demo.queue(max_size=20).launch(server_name="0.0.0.0", server_port=7860)
+share_enabled = os.getenv("GRADIO_SHARE", "false").strip().lower() in {"1", "true", "yes"}
+demo.queue(max_size=20).launch(server_name="0.0.0.0", server_port=7860, share=share_enabled)
