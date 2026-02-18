@@ -1,0 +1,24 @@
+services:
+  voxscribe:
+    build: .
+    container_name: voxscribe
+    ports:
+      - "7860:7860"
+    environment:
+      OUTPUT_DIR: /outputs
+    volumes:
+      - ./outputs:/outputs
+    restart: unless-stopped
+
+  voxscribe-gpu:
+    build: .
+    container_name: voxscribe-gpu
+    profiles: ["gpu"]
+    ports:
+      - "7860:7860"
+    environment:
+      OUTPUT_DIR: /outputs
+    volumes:
+      - ./outputs:/outputs
+    gpus: all
+    restart: unless-stopped

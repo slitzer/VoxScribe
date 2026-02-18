@@ -7,6 +7,9 @@ import whisperx
 from pydub import AudioSegment
 from whisperx.diarize import DiarizationPipeline
 
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/outputs")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
 LANGUAGE_OPTIONS = [
     ("Auto-detect", "auto"),
     ("English", "en"),
@@ -57,7 +60,7 @@ def transcribe_files(files, model_size, language, use_diarization, hf_token, out
                 result = whisperx.assign_word_speakers(diarize_segments, result)
 
             base = os.path.splitext(os.path.basename(file))[0]
-            out_path = f"/tmp/{base}_transcription.{output_format.lower()}"
+            out_path = os.path.join(OUTPUT_DIR, f"{base}_transcription.{output_format.lower()}")
 
             with open(out_path, "w", encoding="utf-8") as output_file:
                 if output_format == "TXT":
