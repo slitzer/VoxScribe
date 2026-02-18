@@ -55,22 +55,6 @@ def patch_gradio_schema_parser():
     gradio_client_utils._json_schema_to_python_type = safe_json_schema_to_python_type
 
 
-def patch_api_info_guard(blocks: gr.Blocks):
-    """Fallback guard for API info generation failures in older gradio stacks."""
-
-    original_get_api_info = blocks.get_api_info
-
-    def safe_get_api_info(all_endpoints: bool = False):
-        try:
-            return original_get_api_info(all_endpoints=all_endpoints)
-        except TypeError as error:
-            if "argument of type 'bool' is not iterable" not in str(error):
-                raise
-            return {"named_endpoints": {}, "unnamed_endpoints": {}}
-
-    blocks.get_api_info = safe_get_api_info
-
-
 def transcribe_files(files, model_size, language, use_diarization, hf_token, output_format):
     if not files:
         return None, "No files"
@@ -160,7 +144,6 @@ with gr.Blocks(title="WhisperX") as demo:
 
 def launch_app():
     patch_gradio_schema_parser()
-    patch_api_info_guard(demo)
 
     share_enabled = (
         os.getenv("GRADIO_SHARE", "false").strip().lower() in {"1", "true", "yes"}
