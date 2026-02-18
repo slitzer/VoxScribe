@@ -76,7 +76,8 @@ docker run --rm --gpus all -p 7860:7860 -e OUTPUT_DIR=/outputs -v "$PWD/outputs:
 - Diarization error: Ensure valid HF token; update `DiarizationPipeline` args
 - GPU compose issues: Verify NVIDIA Container Toolkit and `docker run --gpus all` works on your host
 - Remote/non-localhost environments: set `GRADIO_SHARE=true` to force a shareable Gradio URL if localhost checks fail
-- Gradio schema error (`TypeError: argument of type 'bool' is not iterable`): rebuild with pinned `gradio==4.44.1` and `gradio_client==1.3.0`
+- Gradio schema error (`TypeError: argument of type 'bool' is not iterable`): this build launches Gradio with `show_api=False` to avoid schema parsing on startup
+- Localhost accessibility error (`ValueError: When localhost is not accessible...`): app now retries automatically with `share=True`; you can still force this with `GRADIO_SHARE=true`
 
 ## Future/Wishlist
 - Browser extension: Record live audio in chunks, send to server for real-time transcription. For groups (e.g., 6-player DnD sessions): Join session with usernames for speaker ID. Transcribe collaboratively.

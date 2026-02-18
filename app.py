@@ -113,4 +113,21 @@ with gr.Blocks(title="WhisperX") as demo:
     )
 
 share_enabled = os.getenv("GRADIO_SHARE", "false").strip().lower() in {"1", "true", "yes"}
-demo.queue(max_size=20).launch(server_name="0.0.0.0", server_port=7860, share=share_enabled)
+
+launch_kwargs = {
+    "server_name": "0.0.0.0",
+    "server_port": 7860,
+    "share": share_enabled,
+    # Work around gradio_client schema parsing issues in some container builds.
+    "show_api": False,
+}
+
+try:
+    demo.queue(max_size=20).launch(**launch_kwargs)
+except ValueError as error:
+    if "localhost is not accessible" not in str(error):
+        raise
+
+    print("Localhost check failed, retrying with GRADIO_SHARE enabled.")
+    launch_kwargs["share"] = True
+    demo.queue(max_size=20).launch(**launch_kwargs)
