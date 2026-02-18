@@ -1,0 +1,3 @@
+whisperx==3.8.1
+gradio>=5.0.0
+pydub
