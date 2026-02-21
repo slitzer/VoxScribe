@@ -59,7 +59,7 @@ docker run --rm --gpus all -p 7860:7860 -e OUTPUT_DIR=/outputs -v "$PWD/outputs:
 ## Usage
 - Open web UI
 - Upload files
-- Select model, language (auto-detect or dropdown), format, diarization (enter HF token)
+- Select model, language (auto-detect or dropdown), compute device (CPU default / GPU optional), format, diarization (enter HF token)
 - Click "Transcribe"
 - Download generated outputs from the app
 - Find persisted files in local `./outputs`
@@ -72,7 +72,7 @@ docker run --rm --gpus all -p 7860:7860 -e OUTPUT_DIR=/outputs -v "$PWD/outputs:
 ## Troubleshooting
 - Port in use: `docker ps -a | grep 7860; docker stop <id>`
 - No space: `docker system prune -af --volumes`
-- Old GPU (e.g., 980 Ti): Set `compute_type = "float32"`, `batch_size=4` in `app.py`
+- Old GPU (e.g., 9xx/10xx): choose **CPU** in the UI. GPU mode requires a CUDA-compatible card for the installed PyTorch build
 - Diarization error: Ensure valid HF token; update `DiarizationPipeline` args
 - GPU compose issues: Verify NVIDIA Container Toolkit and `docker run --gpus all` works on your host
 - Remote/non-localhost environments: set `GRADIO_SHARE=true` to force a shareable Gradio URL if localhost checks fail
