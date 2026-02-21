@@ -72,7 +72,7 @@ docker run --rm --gpus all -p 7860:7860 -e OUTPUT_DIR=/outputs -v "$PWD/outputs:
 ## Troubleshooting
 - Port in use: `docker ps -a | grep 7860; docker stop <id>`
 - No space: `docker system prune -af --volumes`
-- Old GPU (e.g., 9xx/10xx): choose **CPU** in the UI. GPU mode requires a CUDA-compatible card for the installed PyTorch build
+- Old GPU (e.g., 9xx/10xx): app now auto-falls back to `float32` if `float16` is unsupported
 - Diarization error: Ensure valid HF token; update `DiarizationPipeline` args
 - GPU compose issues: Verify NVIDIA Container Toolkit and `docker run --gpus all` works on your host
 - Remote/non-localhost environments: set `GRADIO_SHARE=true` to force a shareable Gradio URL if localhost checks fail
