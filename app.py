@@ -55,11 +55,25 @@ def patch_gradio_schema_parser():
     gradio_client_utils._json_schema_to_python_type = safe_json_schema_to_python_type
 
 
-def transcribe_files(files, model_size, language, use_diarization, hf_token, output_format):
+def transcribe_files(
+    files,
+    model_size,
+    language,
+    device_mode,
+    use_diarization,
+    hf_token,
+    output_format,
+):
     if not files:
         return None, "No files"
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device_mode = (device_mode or "CPU").upper()
+    if device_mode == "GPU":
+        if not torch.cuda.is_available():
+            return None, "GPU requested but CUDA is not available in this container/host."
+        device = "cuda"
+    else:
+        device = "cpu"
     compute_type = "float16" if device == "cuda" else "float32"
     batch_size = 16 if device == "cuda" else 4
 
@@ -146,6 +160,12 @@ with gr.Blocks(title="WhisperX") as demo:
             label="Language",
             info="Use auto-detect for mixed/unknown input, or select to speed up transcription.",
         )
+        device_mode = gr.Radio(
+            ["CPU", "GPU"],
+            value="CPU",
+            label="Compute Device",
+            info="CPU is safest on older GPUs. Select GPU only if CUDA is supported by your card.",
+        )
         output_format = gr.Radio(["TXT", "SRT"], value="TXT", label="Format")
     with gr.Row():
         use_diarization = gr.Checkbox(value=True, label="Diarization")
@@ -155,7 +175,7 @@ with gr.Blocks(title="WhisperX") as demo:
     status = gr.Textbox(label="Status")
     btn.click(
         transcribe_files,
-        [files, model_size, language, use_diarization, hf_token, output_format],
+        [files, model_size, language, device_mode, use_diarization, hf_token, output_format],
         [out, status],
         queue=True,
     )

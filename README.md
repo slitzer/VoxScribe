@@ -59,7 +59,7 @@ docker run --rm --gpus all -p 7860:7860 -e OUTPUT_DIR=/outputs -v "$PWD/outputs:
 ## Usage
 - Open web UI
 - Upload files
-- Select model, language (auto-detect or dropdown), format, diarization (enter HF token)
+- Select model, language (auto-detect or dropdown), compute device (CPU default / GPU optional), format, diarization (enter HF token)
 - Click "Transcribe"
 - Download generated outputs from the app
 - Find persisted files in local `./outputs`
