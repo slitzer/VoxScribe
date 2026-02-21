@@ -62,7 +62,18 @@ def transcribe_files(files, model_size, language, use_diarization, hf_token, out
     device = "cuda" if torch.cuda.is_available() else "cpu"
     compute_type = "float16" if device == "cuda" else "float32"
     batch_size = 16 if device == "cuda" else 4
-    model = whisperx.load_model(model_size, device, compute_type=compute_type)
+
+    try:
+        model = whisperx.load_model(model_size, device, compute_type=compute_type)
+    except ValueError as error:
+        # Some older/consumer GPUs expose CUDA but do not support efficient
+        # float16 for faster-whisper. Fallback to float32 automatically.
+        if device != "cuda" or "float16" not in str(error).lower():
+            raise
+
+        compute_type = "float32"
+        batch_size = 4
+        model = whisperx.load_model(model_size, device, compute_type=compute_type)
 
     results = []
     failures = []
@@ -153,6 +164,17 @@ with gr.Blocks(title="WhisperX") as demo:
 def launch_app():
     patch_gradio_schema_parser()
 
+    # In containerized/proxied environments, Gradio's localhost healthcheck can
+    # be routed through an HTTP proxy and fail even when the server is healthy.
+    # Make sure localhost never goes through a proxy.
+    no_proxy_values = [v.strip() for v in os.getenv("NO_PROXY", "").split(",") if v.strip()]
+    for host in ("127.0.0.1", "localhost"):
+        if host not in no_proxy_values:
+            no_proxy_values.append(host)
+    if no_proxy_values:
+        os.environ["NO_PROXY"] = ",".join(no_proxy_values)
+        os.environ["no_proxy"] = os.environ["NO_PROXY"]
+
     share_enabled = (
         os.getenv("GRADIO_SHARE", "false").strip().lower() in {"1", "true", "yes"}
     )
@@ -165,15 +187,17 @@ def launch_app():
         "show_api": False,
     }
 
+    queued_demo = demo.queue(max_size=20)
+
     try:
-        demo.queue(max_size=20).launch(**launch_kwargs)
+        queued_demo.launch(**launch_kwargs)
     except ValueError as error:
         if "localhost is not accessible" not in str(error):
             raise
 
         print("Localhost check failed, retrying with GRADIO_SHARE enabled.")
         launch_kwargs["share"] = True
-        demo.queue(max_size=20).launch(**launch_kwargs)
+        queued_demo.launch(**launch_kwargs)
 
 
 if __name__ == "__main__":
