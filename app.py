@@ -62,7 +62,18 @@ def transcribe_files(files, model_size, language, use_diarization, hf_token, out
     device = "cuda" if torch.cuda.is_available() else "cpu"
     compute_type = "float16" if device == "cuda" else "float32"
     batch_size = 16 if device == "cuda" else 4
-    model = whisperx.load_model(model_size, device, compute_type=compute_type)
+
+    try:
+        model = whisperx.load_model(model_size, device, compute_type=compute_type)
+    except ValueError as error:
+        # Some older/consumer GPUs expose CUDA but do not support efficient
+        # float16 for faster-whisper. Fallback to float32 automatically.
+        if device != "cuda" or "float16" not in str(error).lower():
+            raise
+
+        compute_type = "float32"
+        batch_size = 4
+        model = whisperx.load_model(model_size, device, compute_type=compute_type)
 
     results = []
     failures = []
