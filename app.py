@@ -316,9 +316,23 @@ def refresh_transcript_history(selected_path=None):
 def load_selected_transcript(selected_path):
     if not selected_path:
         return ""
-    if not os.path.exists(selected_path):
+
+    resolved_output_dir = os.path.realpath(OUTPUT_DIR)
+    resolved_selected = os.path.realpath(selected_path)
+    if os.path.commonpath([resolved_output_dir, resolved_selected]) != resolved_output_dir:
+        return "Invalid transcript selection. Click Refresh."
+
+    extension = os.path.splitext(resolved_selected)[1].lower()
+    if extension not in {".txt", ".srt"}:
+        return "Invalid transcript selection. Click Refresh."
+
+    if not os.path.exists(resolved_selected):
         return "Selected transcript no longer exists. Click Refresh."
-    with open(selected_path, "r", encoding="utf-8") as transcript_file:
+
+    if resolved_selected not in {os.path.realpath(path) for path in list_transcript_files()}:
+        return "Invalid transcript selection. Click Refresh."
+
+    with open(resolved_selected, "r", encoding="utf-8") as transcript_file:
         return transcript_file.read()
 
 
