@@ -67,6 +67,10 @@ def transcribe_files(
     if not files:
         return None, "No files"
 
+    hf_token = (hf_token or "").strip()
+    if use_diarization and not hf_token:
+        return None, "Diarization enabled but HF token is empty"
+
     device_mode = (device_mode or "CPU").upper()
     if device_mode == "GPU":
         if not torch.cuda.is_available():
@@ -93,8 +97,16 @@ def transcribe_files(
     failures = []
 
     diarize_model = None
-    if use_diarization and hf_token:
-        diarize_model = DiarizationPipeline(use_auth_token=hf_token, device=device)
+    if use_diarization:
+        try:
+            diarize_model = DiarizationPipeline(use_auth_token=hf_token, device=device)
+        except Exception as error:
+            return (
+                None,
+                "Diarization initialization failure: could not initialize diarization pipeline. "
+                "Likely causes include an invalid HF token, missing access to required "
+                f"pyannote models, or a network/authentication issue. Details: {error}",
+            )
 
     for file in files:
         wav_path = None
@@ -138,7 +150,7 @@ def transcribe_files(
             results.append(out_path)
         except Exception as error:
             failed_file = os.path.basename(file)
-            failures.append(f"{failed_file}: {error}")
+            failures.append(f"{failed_file} (transcription failure): {error}")
         finally:
             if wav_path and os.path.exists(wav_path):
                 os.unlink(wav_path)
