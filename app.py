@@ -69,7 +69,18 @@ def transcribe_files(
 
     hf_token = (hf_token or "").strip()
     if use_diarization and not hf_token:
-        return None, "Diarization enabled but HF token is empty"
+        return None, "Diarization needs a non-empty Hugging Face token with pyannote model access."
+
+    if use_diarization:
+        try:
+            # Lightweight preflight to fail fast on auth/access issues before loading
+            # transcription/alignment models and processing all files.
+            DiarizationPipeline(use_auth_token=hf_token, device="cpu")
+        except Exception:
+            return (
+                None,
+                "Diarization unavailable: token lacks access or model terms are not accepted on Hugging Face.",
+            )
 
     device_mode = (device_mode or "CPU").upper()
     if device_mode == "GPU":
@@ -100,12 +111,10 @@ def transcribe_files(
     if use_diarization:
         try:
             diarize_model = DiarizationPipeline(use_auth_token=hf_token, device=device)
-        except Exception as error:
+        except Exception:
             return (
                 None,
-                "Diarization initialization failure: could not initialize diarization pipeline. "
-                "Likely causes include an invalid HF token, missing access to required "
-                f"pyannote models, or a network/authentication issue. Details: {error}",
+                "Diarization unavailable: token lacks access or model terms are not accepted on Hugging Face.",
             )
 
     for file in files:
@@ -181,7 +190,11 @@ with gr.Blocks(title="WhisperX") as demo:
         output_format = gr.Radio(["TXT", "SRT"], value="TXT", label="Format")
     with gr.Row():
         use_diarization = gr.Checkbox(value=True, label="Diarization")
-        hf_token = gr.Textbox(label="HF Token", type="password")
+        hf_token = gr.Textbox(
+            label="HF Token",
+            type="password",
+            info="Required for diarization and must have access to Hugging Face pyannote diarization models.",
+        )
     btn = gr.Button("Transcribe", variant="primary")
     out = gr.Files(label="Downloads")
     status = gr.Textbox(label="Status")
