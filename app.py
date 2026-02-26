@@ -64,6 +64,26 @@ def transcribe_files(
     hf_token,
     output_format,
 ):
+    def build_status(header, queued_items, active_item=None, completed_items=None, failed_items=None):
+        completed_items = completed_items or []
+        failed_items = failed_items or []
+
+        lines = [header, "", "Queue:"]
+        lines.extend([f"- {item}" for item in queued_items])
+
+        if active_item:
+            lines.extend(["", f"Active: {active_item}"])
+
+        if completed_items:
+            lines.extend(["", "Completed:"])
+            lines.extend([f"- {item}" for item in completed_items])
+
+        if failed_items:
+            lines.extend(["", "Failed:"])
+            lines.extend([f"- {item}" for item in failed_items])
+
+        return "\n".join(lines)
+
     if not files:
         return None, "No files"
 
@@ -106,6 +126,20 @@ def transcribe_files(
 
     results = []
     failures = []
+    completed = []
+    total_files = len(files)
+    queued_items = [
+        f"Queued {i}/{total_files}: {os.path.basename(path)}"
+        for i, path in enumerate(files, start=1)
+    ]
+
+    yield (
+        results,
+        build_status(
+            f"Initialized on {device.upper()}. {total_files} file(s) added to queue.",
+            queued_items,
+        ),
+    )
 
     diarize_model = None
     if use_diarization:
@@ -117,8 +151,22 @@ def transcribe_files(
                 "Diarization unavailable: token lacks access or model terms are not accepted on Hugging Face.",
             )
 
-    for file in files:
+    for idx, file in enumerate(files, start=1):
         wav_path = None
+        file_name = os.path.basename(file)
+        active_item = f"Processing {idx}/{total_files}: {file_name}"
+
+        yield (
+            results,
+            build_status(
+                f"Running on {device.upper()}.",
+                queued_items,
+                active_item=active_item,
+                completed_items=completed,
+                failed_items=failures,
+            ),
+        )
+
         try:
             audio = AudioSegment.from_file(file)
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -157,17 +205,36 @@ def transcribe_files(
                         output_file.write(f"{i}\n{s} --> {e}\n{spk}: {seg['text'].strip()}\n\n")
 
             results.append(out_path)
+            completed.append(f"{file_name} -> {os.path.basename(out_path)}")
         except Exception as error:
-            failed_file = os.path.basename(file)
-            failures.append(f"{failed_file} (transcription failure): {error}")
+            failures.append(f"{file_name} (transcription failure): {error}")
         finally:
             if wav_path and os.path.exists(wav_path):
                 os.unlink(wav_path)
 
-    if failures:
-        return results, f"Done on {device.upper()} with {len(failures)} error(s): {' | '.join(failures)}"
+        yield (
+            results,
+            build_status(
+                f"Processed {idx}/{total_files} file(s) on {device.upper()}.",
+                queued_items,
+                completed_items=completed,
+                failed_items=failures,
+            ),
+        )
 
-    return results, f"Done on {device.upper()}"
+    successful_names = [os.path.basename(path) for path in results]
+    failed_names = [entry.split(" (transcription failure):", 1)[0] for entry in failures]
+    summary_lines = [
+        f"Done on {device.upper()}.",
+        f"Success: {len(results)}/{total_files}",
+        f"Failed: {len(failures)}/{total_files}",
+        f"Successful files: {', '.join(successful_names) if successful_names else 'None'}",
+        f"Failed files: {', '.join(failed_names) if failed_names else 'None'}",
+    ]
+    if failures:
+        summary_lines.append("Failure details: " + " | ".join(failures))
+
+    return results, "\n".join(summary_lines)
 
 
 with gr.Blocks(title="WhisperX") as demo:
@@ -232,7 +299,12 @@ def launch_app():
         "show_api": False,
     }
 
-    queued_demo = demo.queue(max_size=20)
+    queue_max_size = int(os.getenv("GRADIO_QUEUE_MAX_SIZE", "20"))
+    queue_concurrency = int(os.getenv("GRADIO_QUEUE_CONCURRENCY", "2"))
+    queued_demo = demo.queue(
+        max_size=queue_max_size,
+        default_concurrency_limit=queue_concurrency,
+    )
 
     try:
         queued_demo.launch(**launch_kwargs)
