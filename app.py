@@ -1,6 +1,7 @@
 import os
 import tempfile
 import uuid
+import logging
 from datetime import datetime
 
 import gradio as gr
@@ -8,10 +9,19 @@ import torch
 import whisperx
 from gradio_client import utils as gradio_client_utils
 from pydub import AudioSegment
+from huggingface_hub.utils import GatedRepoError, HfHubHTTPError, RepositoryNotFoundError
 from whisperx.diarize import DiarizationPipeline
 
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/outputs")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+logger = logging.getLogger(__name__)
+DEV_MODE = os.getenv("VOXSCRIBE_DEV_MODE", "false").strip().lower() in {"1", "true", "yes"}
+
+
+def _log_exception(context, error):
+    logger.error("%s failed: %s: %s", context, type(error).__name__, error)
+    print(f"[transcribe_files] {context} failed: {type(error).__name__}: {error}")
 
 LANGUAGE_OPTIONS = [
     ("Auto-detect", "auto"),
@@ -110,11 +120,32 @@ def transcribe_files(
             # Lightweight preflight to fail fast on auth/access issues before loading
             # transcription/alignment models and processing all files.
             DiarizationPipeline(use_auth_token=hf_token, device="cpu")
-        except Exception:
+        except (GatedRepoError, RepositoryNotFoundError, HfHubHTTPError, PermissionError) as error:
+            _log_exception("diarization preflight auth/access", error)
             history_choices, selected_history, transcript_preview = get_transcript_history_state()
             return (
                 None,
-                "Diarization unavailable: token lacks access or model terms are not accepted on Hugging Face.",
+                "Diarization unavailable: auth/access issue for required Hugging Face model.",
+                gr.update(choices=history_choices, value=selected_history),
+                transcript_preview,
+            )
+        except (RuntimeError, OSError, ValueError) as error:
+            _log_exception("diarization preflight model load", error)
+            history_choices, selected_history, transcript_preview = get_transcript_history_state()
+            return (
+                None,
+                "Diarization unavailable: model load failure.",
+                gr.update(choices=history_choices, value=selected_history),
+                transcript_preview,
+            )
+        except Exception as error:
+            _log_exception("diarization preflight unexpected", error)
+            if DEV_MODE:
+                raise
+            history_choices, selected_history, transcript_preview = get_transcript_history_state()
+            return (
+                None,
+                "Diarization unavailable: unexpected internal error.",
                 gr.update(choices=history_choices, value=selected_history),
                 transcript_preview,
             )
@@ -172,11 +203,32 @@ def transcribe_files(
     if use_diarization:
         try:
             diarize_model = DiarizationPipeline(use_auth_token=hf_token, device=device)
-        except Exception:
+        except (GatedRepoError, RepositoryNotFoundError, HfHubHTTPError, PermissionError) as error:
+            _log_exception("diarization initialization auth/access", error)
             history_choices, selected_history, transcript_preview = get_transcript_history_state()
             return (
                 None,
-                "Diarization unavailable: token lacks access or model terms are not accepted on Hugging Face.",
+                "Diarization unavailable: auth/access issue for required Hugging Face model.",
+                gr.update(choices=history_choices, value=selected_history),
+                transcript_preview,
+            )
+        except (RuntimeError, OSError, ValueError) as error:
+            _log_exception("diarization initialization model load", error)
+            history_choices, selected_history, transcript_preview = get_transcript_history_state()
+            return (
+                None,
+                "Diarization unavailable: model load failure.",
+                gr.update(choices=history_choices, value=selected_history),
+                transcript_preview,
+            )
+        except Exception as error:
+            _log_exception("diarization initialization unexpected", error)
+            if DEV_MODE:
+                raise
+            history_choices, selected_history, transcript_preview = get_transcript_history_state()
+            return (
+                None,
+                "Diarization unavailable: unexpected internal error.",
                 gr.update(choices=history_choices, value=selected_history),
                 transcript_preview,
             )
@@ -243,7 +295,20 @@ def transcribe_files(
             results.append(out_path)
             completed.append(f"{file_name} -> {output_name}")
         except Exception as error:
-            failures.append(f"{file_name} (transcription failure): {error}")
+            _log_exception(f"per-file processing ({file_name})", error)
+            failures.append(
+                f"{file_name} (transcription failure): {type(error).__name__}: {error}"
+            )
+            if DEV_MODE and not isinstance(
+                error,
+                (
+                    ValueError,
+                    RuntimeError,
+                    OSError,
+                    FileNotFoundError,
+                ),
+            ):
+                raise
         finally:
             if wav_path and os.path.exists(wav_path):
                 os.unlink(wav_path)
