@@ -1,5 +1,6 @@
 import os
 import tempfile
+import uuid
 from datetime import datetime
 
 import gradio as gr
@@ -217,7 +218,10 @@ def transcribe_files(
                 result = whisperx.assign_word_speakers(diarize_segments, result)
 
             base = os.path.splitext(os.path.basename(file))[0]
-            out_path = os.path.join(OUTPUT_DIR, f"{base}_transcription.{output_format.lower()}")
+            extension = "txt" if output_format == "TXT" else "srt"
+            suffix = f"{datetime.utcnow().strftime('%Y%m%dT%H%M%S%f')}_{uuid.uuid4().hex[:8]}"
+            output_name = f"{base}_transcription_{suffix}.{extension}"
+            out_path = os.path.join(OUTPUT_DIR, output_name)
 
             with open(out_path, "w", encoding="utf-8") as output_file:
                 if output_format == "TXT":
@@ -234,7 +238,7 @@ def transcribe_files(
                         output_file.write(f"{i}\n{s} --> {e}\n{spk}: {seg['text'].strip()}\n\n")
 
             results.append(out_path)
-            completed.append(f"{file_name} -> {os.path.basename(out_path)}")
+            completed.append(f"{file_name} -> {output_name}")
         except Exception as error:
             failures.append(f"{file_name} (transcription failure): {error}")
         finally:
