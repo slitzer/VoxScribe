@@ -18,6 +18,13 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 DEV_MODE = os.getenv("VOXSCRIBE_DEV_MODE", "false").strip().lower() in {"1", "true", "yes"}
+DISABLE_NNPACK = os.getenv("VOXSCRIBE_DISABLE_NNPACK", "true").strip().lower() in {"1", "true", "yes"}
+DIARIZATION_ACCESS_HINT = (
+    "Diarization unavailable: your Hugging Face token cannot access "
+    "pyannote/speaker-diarization-community-1. "
+    "Request access at https://hf.co/pyannote/speaker-diarization-community-1 "
+    "and then retry with a token that accepted the model terms."
+)
 
 
 def _log_exception(context, error):
@@ -31,6 +38,14 @@ def _create_diarization_pipeline(hf_token, device):
     init_parameters = inspect.signature(DiarizationPipeline.__init__).parameters
     token_kwarg = "token" if "token" in init_parameters else "use_auth_token"
     return DiarizationPipeline(**{token_kwarg: hf_token}, device=device)
+
+
+def configure_torch_runtime():
+    """Apply runtime toggles that reduce noisy or unsupported CPU backend paths."""
+
+    if DISABLE_NNPACK:
+        torch.backends.nnpack.set_flags(False)
+
 
 LANGUAGE_OPTIONS = [
     ("Auto-detect", "auto"),
@@ -129,7 +144,16 @@ def transcribe_files(
             # Lightweight preflight to fail fast on auth/access issues before loading
             # transcription/alignment models and processing all files.
             _create_diarization_pipeline(hf_token, device="cpu")
-        except (GatedRepoError, RepositoryNotFoundError, HfHubHTTPError, PermissionError) as error:
+        except GatedRepoError as error:
+            _log_exception("diarization preflight auth/access", error)
+            history_choices, selected_history, transcript_preview = get_transcript_history_state()
+            return (
+                None,
+                DIARIZATION_ACCESS_HINT,
+                gr.update(choices=history_choices, value=selected_history),
+                transcript_preview,
+            )
+        except (RepositoryNotFoundError, HfHubHTTPError, PermissionError) as error:
             _log_exception("diarization preflight auth/access", error)
             history_choices, selected_history, transcript_preview = get_transcript_history_state()
             return (
@@ -212,7 +236,16 @@ def transcribe_files(
     if use_diarization:
         try:
             diarize_model = _create_diarization_pipeline(hf_token, device=device)
-        except (GatedRepoError, RepositoryNotFoundError, HfHubHTTPError, PermissionError) as error:
+        except GatedRepoError as error:
+            _log_exception("diarization initialization auth/access", error)
+            history_choices, selected_history, transcript_preview = get_transcript_history_state()
+            return (
+                None,
+                DIARIZATION_ACCESS_HINT,
+                gr.update(choices=history_choices, value=selected_history),
+                transcript_preview,
+            )
+        except (RepositoryNotFoundError, HfHubHTTPError, PermissionError) as error:
             _log_exception("diarization initialization auth/access", error)
             history_choices, selected_history, transcript_preview = get_transcript_history_state()
             return (
@@ -484,6 +517,7 @@ with gr.Blocks(title="WhisperX") as demo:
 
 def launch_app():
     patch_gradio_schema_parser()
+    configure_torch_runtime()
 
     # In containerized/proxied environments, Gradio's localhost healthcheck can
     # be routed through an HTTP proxy and fail even when the server is healthy.

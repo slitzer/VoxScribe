@@ -7,6 +7,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cu118
 RUN pip install --no-cache-dir -r requirements.txt
+# torchcodec is optional for this app path and can emit noisy FFmpeg ABI errors
+# on base images that ship FFmpeg 4.x only.
+RUN pip uninstall -y torchcodec || true
 
 COPY app.py .
 

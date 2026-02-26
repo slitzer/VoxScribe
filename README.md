@@ -73,7 +73,9 @@ docker run --rm --gpus all -p 7860:7860 -e OUTPUT_DIR=/outputs -v "$PWD/outputs:
 - Port in use: `docker ps -a | grep 7860; docker stop <id>`
 - No space: `docker system prune -af --volumes`
 - Old GPU (e.g., 9xx/10xx): app now auto-falls back to `float32` if `float16` is unsupported
-- Diarization error: Ensure valid HF token; update `DiarizationPipeline` args
+- Diarization error (`GatedRepoError: 403`): request and accept access for `pyannote/speaker-diarization-community-1`, then use an HF token from that same account
+- `libtorchcodec` FFmpeg loading traceback (`libavutil.so.*`): noisy optional dependency warning; VoxScribe does not require `torchcodec` and now removes it during image build
+- Repeated `NNPACK` warnings on CPU-only/older hardware: now suppressed by default in app startup (`VOXSCRIBE_DISABLE_NNPACK=true`); set `VOXSCRIBE_DISABLE_NNPACK=false` to restore default PyTorch behavior
 - GPU compose issues: Verify NVIDIA Container Toolkit and `docker run --gpus all` works on your host
 - Remote/non-localhost environments: set `GRADIO_SHARE=true` to force a shareable Gradio URL if localhost checks fail
 - Gradio schema error (`TypeError: argument of type 'bool' is not iterable`): this build launches Gradio with `show_api=False` to avoid schema parsing on startup
