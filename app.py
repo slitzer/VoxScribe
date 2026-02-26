@@ -120,16 +120,13 @@ def transcribe_files(
             )
 
     device_mode = (device_mode or "CPU").upper()
+    gpu_fallback = False
     if device_mode == "GPU":
         if not torch.cuda.is_available():
-            history_choices, selected_history, transcript_preview = get_transcript_history_state()
-            return (
-                None,
-                "GPU requested but CUDA is not available in this container/host.",
-                gr.update(choices=history_choices, value=selected_history),
-                transcript_preview,
-            )
-        device = "cuda"
+            device = "cpu"
+            gpu_fallback = True
+        else:
+            device = "cuda"
     else:
         device = "cpu"
     compute_type = "float16" if device == "cuda" else "float32"
@@ -159,7 +156,12 @@ def transcribe_files(
     yield (
         results,
         build_status(
-            f"Initialized on {device.upper()}. {total_files} file(s) added to queue.",
+            (
+                "GPU unavailable; using CPU. "
+                if gpu_fallback
+                else ""
+            )
+            + f"Initialized on {device.upper()}. {total_files} file(s) added to queue.",
             queued_items,
         ),
         gr.update(),
@@ -187,7 +189,8 @@ def transcribe_files(
         yield (
             results,
             build_status(
-                f"Running on {device.upper()}.",
+                ("GPU unavailable; using CPU. " if gpu_fallback else "")
+                + f"Running on {device.upper()}.",
                 queued_items,
                 active_item=active_item,
                 completed_items=completed,
