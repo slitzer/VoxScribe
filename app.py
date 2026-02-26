@@ -1,5 +1,6 @@
 import os
 import tempfile
+from datetime import datetime
 
 import gradio as gr
 import torch
@@ -85,11 +86,23 @@ def transcribe_files(
         return "\n".join(lines)
 
     if not files:
-        return None, "No files"
+        history_choices, selected_history, transcript_preview = get_transcript_history_state()
+        return (
+            None,
+            "No files",
+            gr.update(choices=history_choices, value=selected_history),
+            transcript_preview,
+        )
 
     hf_token = (hf_token or "").strip()
     if use_diarization and not hf_token:
-        return None, "Diarization needs a non-empty Hugging Face token with pyannote model access."
+        history_choices, selected_history, transcript_preview = get_transcript_history_state()
+        return (
+            None,
+            "Diarization needs a non-empty Hugging Face token with pyannote model access.",
+            gr.update(choices=history_choices, value=selected_history),
+            transcript_preview,
+        )
 
     if use_diarization:
         try:
@@ -97,15 +110,24 @@ def transcribe_files(
             # transcription/alignment models and processing all files.
             DiarizationPipeline(use_auth_token=hf_token, device="cpu")
         except Exception:
+            history_choices, selected_history, transcript_preview = get_transcript_history_state()
             return (
                 None,
                 "Diarization unavailable: token lacks access or model terms are not accepted on Hugging Face.",
+                gr.update(choices=history_choices, value=selected_history),
+                transcript_preview,
             )
 
     device_mode = (device_mode or "CPU").upper()
     if device_mode == "GPU":
         if not torch.cuda.is_available():
-            return None, "GPU requested but CUDA is not available in this container/host."
+            history_choices, selected_history, transcript_preview = get_transcript_history_state()
+            return (
+                None,
+                "GPU requested but CUDA is not available in this container/host.",
+                gr.update(choices=history_choices, value=selected_history),
+                transcript_preview,
+            )
         device = "cuda"
     else:
         device = "cpu"
@@ -139,6 +161,8 @@ def transcribe_files(
             f"Initialized on {device.upper()}. {total_files} file(s) added to queue.",
             queued_items,
         ),
+        gr.update(),
+        gr.update(),
     )
 
     diarize_model = None
@@ -146,9 +170,12 @@ def transcribe_files(
         try:
             diarize_model = DiarizationPipeline(use_auth_token=hf_token, device=device)
         except Exception:
+            history_choices, selected_history, transcript_preview = get_transcript_history_state()
             return (
                 None,
                 "Diarization unavailable: token lacks access or model terms are not accepted on Hugging Face.",
+                gr.update(choices=history_choices, value=selected_history),
+                transcript_preview,
             )
 
     for idx, file in enumerate(files, start=1):
@@ -165,6 +192,8 @@ def transcribe_files(
                 completed_items=completed,
                 failed_items=failures,
             ),
+            gr.update(),
+            gr.update(),
         )
 
         try:
@@ -220,6 +249,8 @@ def transcribe_files(
                 completed_items=completed,
                 failed_items=failures,
             ),
+            gr.update(),
+            gr.update(),
         )
 
     successful_names = [os.path.basename(path) for path in results]
@@ -234,7 +265,61 @@ def transcribe_files(
     if failures:
         summary_lines.append("Failure details: " + " | ".join(failures))
 
-    return results, "\n".join(summary_lines)
+    history_choices, selected_history, transcript_preview = get_transcript_history_state()
+    return (
+        results,
+        "\n".join(summary_lines),
+        gr.update(choices=history_choices, value=selected_history),
+        transcript_preview,
+    )
+
+
+def list_transcript_files():
+    transcript_files = []
+    for name in os.listdir(OUTPUT_DIR):
+        path = os.path.join(OUTPUT_DIR, name)
+        if not os.path.isfile(path):
+            continue
+        extension = os.path.splitext(name)[1].lower()
+        if extension not in {".txt", ".srt"}:
+            continue
+        transcript_files.append(path)
+
+    transcript_files.sort(key=lambda path: os.path.getmtime(path), reverse=True)
+    return transcript_files
+
+
+def get_transcript_history_state(selected_path=None):
+    transcript_paths = list_transcript_files()
+    if not transcript_paths:
+        return [], None, "No transcripts found in OUTPUT_DIR yet."
+
+    dropdown_choices = []
+    for path in transcript_paths:
+        modified_at = datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M:%S")
+        dropdown_choices.append((f"{os.path.basename(path)} (updated {modified_at})", path))
+
+    active_path = selected_path if selected_path in transcript_paths else transcript_paths[0]
+    with open(active_path, "r", encoding="utf-8") as transcript_file:
+        content = transcript_file.read()
+    return dropdown_choices, active_path, content
+
+
+def refresh_transcript_history(selected_path=None):
+    choices, active_path, content = get_transcript_history_state(selected_path)
+    return (
+        gr.update(choices=choices, value=active_path),
+        content,
+    )
+
+
+def load_selected_transcript(selected_path):
+    if not selected_path:
+        return ""
+    if not os.path.exists(selected_path):
+        return "Selected transcript no longer exists. Click Refresh."
+    with open(selected_path, "r", encoding="utf-8") as transcript_file:
+        return transcript_file.read()
 
 
 with gr.Blocks(title="WhisperX") as demo:
@@ -265,11 +350,40 @@ with gr.Blocks(title="WhisperX") as demo:
     btn = gr.Button("Transcribe", variant="primary")
     out = gr.Files(label="Downloads")
     status = gr.Textbox(label="Status")
+
+    with gr.Row():
+        transcript_history = gr.Dropdown(
+            label="Transcript History",
+            choices=[],
+            value=None,
+            info="TXT/SRT files from OUTPUT_DIR sorted by most recently modified.",
+        )
+        refresh_history = gr.Button("Refresh History")
+    transcript_preview = gr.Code(label="Transcript Preview", value="", language="markdown", interactive=False)
+
     btn.click(
         transcribe_files,
         [files, model_size, language, device_mode, use_diarization, hf_token, output_format],
-        [out, status],
+        [out, status, transcript_history, transcript_preview],
         queue=True,
+    )
+
+    refresh_history.click(
+        refresh_transcript_history,
+        [transcript_history],
+        [transcript_history, transcript_preview],
+    )
+
+    transcript_history.change(
+        load_selected_transcript,
+        [transcript_history],
+        [transcript_preview],
+    )
+
+    demo.load(
+        refresh_transcript_history,
+        [transcript_history],
+        [transcript_history, transcript_preview],
     )
 
 
