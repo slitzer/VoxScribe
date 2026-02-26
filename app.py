@@ -2,6 +2,7 @@ import os
 import tempfile
 import uuid
 import logging
+import inspect
 from datetime import datetime
 
 import gradio as gr
@@ -22,6 +23,14 @@ DEV_MODE = os.getenv("VOXSCRIBE_DEV_MODE", "false").strip().lower() in {"1", "tr
 def _log_exception(context, error):
     logger.error("%s failed: %s: %s", context, type(error).__name__, error)
     print(f"[transcribe_files] {context} failed: {type(error).__name__}: {error}")
+
+
+def _create_diarization_pipeline(hf_token, device):
+    """Build DiarizationPipeline across whisperx/pyannote API variants."""
+
+    init_parameters = inspect.signature(DiarizationPipeline.__init__).parameters
+    token_kwarg = "token" if "token" in init_parameters else "use_auth_token"
+    return DiarizationPipeline(**{token_kwarg: hf_token}, device=device)
 
 LANGUAGE_OPTIONS = [
     ("Auto-detect", "auto"),
@@ -119,7 +128,7 @@ def transcribe_files(
         try:
             # Lightweight preflight to fail fast on auth/access issues before loading
             # transcription/alignment models and processing all files.
-            DiarizationPipeline(use_auth_token=hf_token, device="cpu")
+            _create_diarization_pipeline(hf_token, device="cpu")
         except (GatedRepoError, RepositoryNotFoundError, HfHubHTTPError, PermissionError) as error:
             _log_exception("diarization preflight auth/access", error)
             history_choices, selected_history, transcript_preview = get_transcript_history_state()
@@ -202,7 +211,7 @@ def transcribe_files(
     diarize_model = None
     if use_diarization:
         try:
-            diarize_model = DiarizationPipeline(use_auth_token=hf_token, device=device)
+            diarize_model = _create_diarization_pipeline(hf_token, device=device)
         except (GatedRepoError, RepositoryNotFoundError, HfHubHTTPError, PermissionError) as error:
             _log_exception("diarization initialization auth/access", error)
             history_choices, selected_history, transcript_preview = get_transcript_history_state()
